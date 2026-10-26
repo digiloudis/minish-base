@@ -214,7 +214,7 @@ static int execute_pipeline(const struct pipeline *pipeline)
 
 		if (cmd_name != NULL) {
 			// Handle exit command
-			if (strcmp(cmd_name, "exit") == 0) exit(0);
+			if (strcmp(cmd_name, "exit") == 0) exit(EXIT_SUCCESS);
 
 			// Handle cd command
 			if (strcmp(cmd_name, "cd") == 0) {
@@ -249,7 +249,26 @@ static int execute_pipeline(const struct pipeline *pipeline)
 	// E.g., cmd1 | cmd2 : 2 commands.
 	// E.g., cmd1 : 1 command.
 
-	// Add your code here...
+	for (size_t i = 0; i < pipeline->command_count; i++) {
+		const struct command *cmd = &pipeline->commands[i];
+		const char *cmd_name = cmd->argv[0];
+		pid_t pid = fork();
+
+		if (pid < 0) {
+			perror("fork");
+			free(pids);
+			return -1;
+		} else if (pid == 0) {
+			execvp(cmd_name, cmd->argv);
+
+			perror(cmd_name);
+			exit(EXIT_FAILURE);
+		} else {
+			pids[i] = pid;
+		}
+	}
+
+	for (size_t i = 0; i < pipeline->command_count; i++) waitpid(pids[i], NULL, 0);
         
 	free(pids);
 	return result;
