@@ -278,13 +278,21 @@ static int execute_pipeline(const struct pipeline *pipeline)
 	// Allocate an array to store the PID of each child process.
     // You may use the array below, if you find it helpful.    
 	pids = calloc(pipeline->command_count, sizeof(*pids));
-	if (pids == NULL)
-		return -1;
+	if (pids == NULL) return -1;
 
 	// Process each command in the pipeline. Remember that the command_count
 	// tells us the number of commands in the pipeline.
 	// E.g., cmd1 | cmd2 : 2 commands.
 	// E.g., cmd1 : 1 command.
+	int pipefds[2 * (pipeline->command_count - 1)];
+	for (size_t i = 0; i < num_cmds - 1; i++) {
+		if (pipe(pipefds + i * 2) == -1) {
+			perror("pipe");
+
+			free(pids);
+			return -1;
+		}
+	}
 
 	for (size_t i = 0; i < pipeline->command_count; i++) {
 		const struct command *cmd = &pipeline->commands[i];
@@ -303,6 +311,22 @@ static int execute_pipeline(const struct pipeline *pipeline)
 				sigemptyset(&dfl.sa_mask);
 				sigaction(SIGINT, &dfl, NULL);
 			}
+
+			if (i > 0) {
+				if (dup2(pipefds[(i - 1) * 2], STDIN_FILENO) == -1) {
+					perror("dup2 pipe input");
+					exit(EXIT_FAILURE);
+				}
+			}
+
+			if (i < pipeline->command_count - 1) {
+				if (dup2(pipefds[i * 2 + 1], STDOUT_FILENO) == -1) {
+					perror("minish: dup2 pipe output");
+					exit(EXIT_FAILURE);
+				}
+			}
+
+			for (size_t j = 0; j < 2 * (pipeline->command_count - 1); j++) close(pipefds[j]);
 
 			for (size_t r = 0; r < cmd->redirect_count; r++) {
 				const struct *redirect redir = $cmd->redirects[r];
@@ -348,6 +372,8 @@ static int execute_pipeline(const struct pipeline *pipeline)
 			if (pipeline->background) add_bg_job(pid);
 		}
 	}
+
+	for (size_t i = 0; i < 2 * (pipeline->command_count - 1); i++) close(pipefds[i]);
 
 	if(!pipeline->background) for (size_t i = 0; i < pipeline->command_count; i++) waitpid(pids[i], NULL, 0);
         
