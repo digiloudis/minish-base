@@ -58,6 +58,8 @@ int main(void)
 	int error;
 	int result;
 
+	init_bg_jobs(jobs);
+
 	// Install the required signal handlers here.
 	// Add your code here.
 	 
@@ -159,7 +161,11 @@ void add_bg_job(const pid_t pid)
 	for (i = 0; i < MAX_JOBS; i++) {
 		// Find the first position in the array with active == 0 and add the
 		// new job there. Then call break to exit the loop.
-        // Add your code here...
+        if (jobs[i].active == 0) {
+			jobs[i].pid = pid;
+			jobs[i].active = 1;
+			break;
+		}
 	}
 }
 
@@ -171,7 +177,11 @@ void remove_bg_job(const pid_t pid)
 		// Find the first position in the array where its pid matches with the
 		// pid parameter of the function and then clean it by setting pid to
 		// -1 and active to 0.
-        // Add your code here...
+        if (jobs[i].pid == pid && jobs[i].active == 1) {
+			jobs[i].pid = -1;
+			jobs[i].active = 0;
+			break;
+		}
 	}
 }
 
@@ -265,10 +275,11 @@ static int execute_pipeline(const struct pipeline *pipeline)
 			exit(EXIT_FAILURE);
 		} else {
 			pids[i] = pid;
+			if (pipeline->background) add_bg_job(pid);
 		}
 	}
 
-	for (size_t i = 0; i < pipeline->command_count; i++) waitpid(pids[i], NULL, 0);
+	if(!pipeline->background) for (size_t i = 0; i < pipeline->command_count; i++) waitpid(pids[i], NULL, 0);
         
 	free(pids);
 	return result;
