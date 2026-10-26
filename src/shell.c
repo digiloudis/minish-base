@@ -43,6 +43,7 @@ static void init_bg_jobs(struct job *jobs);
 static void add_bg_job(const pid_t pid);
 static void remove_bg_job(const pid_t pid);
 static void reap_bg_jobs(void);
+static void handle_sigchld(int sig);
 
 // Add the prototypes of helper funcitons here...
 
@@ -61,7 +62,13 @@ int main(void)
 	init_bg_jobs(jobs);
 
 	// Install the required signal handlers here.
-	// Add your code here.
+	struct sigaction chld_action;
+	memset(&chld_action, 0, sizeof(chld_action));
+	chld_action.sa_handler = handle_sigchld;
+	sigemptyset(&chld_action.sa_mask);
+	chld_action.sa_flags = SA_RESTART;
+
+	if (sigaction(SIGCHLD, &chld_action, NULL) == -1) perror("sigaction SIGCHLD");
 	 
 	// The main shell loop.
 	for (;;) {
@@ -106,6 +113,11 @@ int main(void)
 		pipeline_free(&pipeline);
 	}
 	return EXIT_SUCCESS;
+}
+
+static void handle_sigchld(int sig) {
+	(void)sig;
+	reap_bg_jobs();
 }
 
 /**
@@ -196,8 +208,10 @@ void reap_bg_jobs(void) {
 		// If this call returns a positive pid, then this means that we just
 		// found a terminated background process. Call remove_bg_job()
 		// properly to remove this process from the jobs array.
-          		
-        // Add your code here...
+		if (jobs[i].active == 1) {
+			pid = waitpid(jobs[i].pid, &status, WNOHANG);
+			if (pid > 0) remove_bg_job(pid);
+		}
 	}	
 }
 
@@ -224,7 +238,10 @@ static int execute_pipeline(const struct pipeline *pipeline)
 
 		if (cmd_name != NULL) {
 			// Handle exit command
-			if (strcmp(cmd_name, "exit") == 0) exit(EXIT_SUCCESS);
+			if (strcmp(cmd_name, "exit") == 0) {
+				pipeline_free((struct pipeline *)pipeline);
+				exit(EXIT_SUCCESS);
+			}
 
 			// Handle cd command
 			if (strcmp(cmd_name, "cd") == 0) {
