@@ -68,14 +68,14 @@ int main(void)
 	sigemptyset(&chld_action.sa_mask);
 	chld_action.sa_flags = SA_RESTART;
 
-	if (sigaction(SIGCHLD, &chld_action, NULL) == -1) perror("sigaction SIGCHLD");
+	if (sigaction(SIGCHLD, &chld_action, NULL) < 0) perror("sigaction SIGCHLD");
 
 	struct sigaction int_action;
 	memset(&int_action, 0, sizeof(int_action));
 	int_action.sa_handler = SIG_IGN;
 	sigemptyset(&int_action.sa_mask);
 
-	if (sigaction(SIGINT, &int_action, NULL) == -1) {
+	if (sigaction(SIGINT, &int_action, NULL) < 0) {
 		perror("sigaction SIGINT");
 		return EXIT_FAILURE;
 	}
@@ -136,7 +136,11 @@ static void handle_sigchld(int sig) {
 static void print_prompt(void)
 {
 	if (isatty(STDIN_FILENO) != 0) {
-		(void)printf("minish$ ");
+		char cwd[INPUT_SIZE];
+
+		if (getcwd(cwd, sizeof(cwd)) != NULL) (void)printf("minish:%s$ ", cwd);
+		else (void)printf("minish$ ");
+		
 		(void)fflush(stdout);
 	}
 }
@@ -266,7 +270,7 @@ static int execute_pipeline(const struct pipeline *pipeline)
 					path = home;
 				}
 
-				if (chdir(path) == -1) perror("cd");
+				if (chdir(path) < 0) perror("cd");
 				return 0;
 			}
 		}
@@ -284,9 +288,9 @@ static int execute_pipeline(const struct pipeline *pipeline)
 	// tells us the number of commands in the pipeline.
 	// E.g., cmd1 | cmd2 : 2 commands.
 	// E.g., cmd1 : 1 command.
-	int pipefds[2 * (pipeline->command_count - 1)];
-	for (size_t i = 0; i < num_cmds - 1; i++) {
-		if (pipe(pipefds + i * 2) == -1) {
+	int pipefds[pipeline->command_count > 1 ? 2 * (pipeline->command_count - 1) : 1];
+	for (size_t i = 0; i < pipeline->command_count - 1; i++) {
+		if (pipe(pipefds + i * 2) < 0) {
 			perror("pipe");
 
 			free(pids);
@@ -313,14 +317,14 @@ static int execute_pipeline(const struct pipeline *pipeline)
 			}
 
 			if (i > 0) {
-				if (dup2(pipefds[(i - 1) * 2], STDIN_FILENO) == -1) {
+				if (dup2(pipefds[(i - 1) * 2], STDIN_FILENO) < 0) {
 					perror("dup2 pipe input");
 					exit(EXIT_FAILURE);
 				}
 			}
 
 			if (i < pipeline->command_count - 1) {
-				if (dup2(pipefds[i * 2 + 1], STDOUT_FILENO) == -1) {
+				if (dup2(pipefds[i * 2 + 1], STDOUT_FILENO) < 0) {
 					perror("minish: dup2 pipe output");
 					exit(EXIT_FAILURE);
 				}
@@ -329,17 +333,17 @@ static int execute_pipeline(const struct pipeline *pipeline)
 			for (size_t j = 0; j < 2 * (pipeline->command_count - 1); j++) close(pipefds[j]);
 
 			for (size_t r = 0; r < cmd->redirect_count; r++) {
-				const struct *redirect redir = $cmd->redirects[r];
+				const struct redirect *redir = &cmd->redirects[r];
 				int fd = -1;
 
 				if (redir->type == REDIRECT_INPUT) {
 					fd = open(redir->path, O_RDONLY);
-					if (fd == -1) {
+					if (fd < 0) {
 						perror("open input");
-						exit(EXIT_FAILURE
+						exit(EXIT_FAILURE);
 					}
 
-					if (dup2(fd, STDIN_FILENO) == -1) {
+					if (dup2(fd, STDIN_FILENO) < 0) {
 						perror("dup2 input");
 						close(fd);
 						exit(EXIT_FAILURE);
@@ -348,13 +352,27 @@ static int execute_pipeline(const struct pipeline *pipeline)
 					close(fd);
 				} else if (redir->type == REDIRECT_OUTPUT) {
 					fd = open(redir->path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-					if (fd == -1) {
+					if (fd < 0) {
 						perror("open output");
-						exit(EXIT_FAILURE
+						exit(EXIT_FAILURE);
 					}
 
-					if (dup2(fd, STDIN_FILENO) == -1) {
+					if (dup2(fd, STDOUT_FILENO) < 0) {
 						perror("dup2 output");
+						close(fd);
+						exit(EXIT_FAILURE);
+					}
+
+					close(fd);
+				} else if (redir->type == REDIRECT_APPEND) {
+					fd = open(redir->path, O_WRONLY | O_CREAT | O_APPEND, 0644);
+					if (fd < 0) {
+						perror("open append");
+						exit(EXIT_FAILURE);
+					}
+
+					if (dup2(fd, STDOUT_FILENO) < 0) {
+						perror("dup2 append");
 						close(fd);
 						exit(EXIT_FAILURE);
 					}
