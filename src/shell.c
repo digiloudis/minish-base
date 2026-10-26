@@ -304,6 +304,41 @@ static int execute_pipeline(const struct pipeline *pipeline)
 				sigaction(SIGINT, &dfl, NULL);
 			}
 
+			for (size_t r = 0; r < cmd->redirect_count; r++) {
+				const struct *redirect redir = $cmd->redirects[r];
+				int fd = -1;
+
+				if (redir->type == REDIRECT_INPUT) {
+					fd = open(redir->path, O_RDONLY);
+					if (fd == -1) {
+						perror("open input");
+						exit(EXIT_FAILURE
+					}
+
+					if (dup2(fd, STDIN_FILENO) == -1) {
+						perror("dup2 input");
+						close(fd);
+						exit(EXIT_FAILURE);
+					}
+
+					close(fd);
+				} else if (redir->type == REDIRECT_OUTPUT) {
+					fd = open(redir->path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+					if (fd == -1) {
+						perror("open output");
+						exit(EXIT_FAILURE
+					}
+
+					if (dup2(fd, STDIN_FILENO) == -1) {
+						perror("dup2 output");
+						close(fd);
+						exit(EXIT_FAILURE);
+					}
+
+					close(fd);
+				}
+			}
+
 			execvp(cmd_name, cmd->argv);
 
 			perror(cmd_name);
