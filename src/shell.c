@@ -69,6 +69,16 @@ int main(void)
 	chld_action.sa_flags = SA_RESTART;
 
 	if (sigaction(SIGCHLD, &chld_action, NULL) == -1) perror("sigaction SIGCHLD");
+
+	struct sigaction int_action;
+	memset(&int_action, 0, sizeof(int_action));
+	int_action.sa_handler = SIG_IGN;
+	sigemptyset(&int_action.sa_mask);
+
+	if (sigaction(SIGINT, &int_action, NULL) == -1) {
+		perror("sigaction SIGINT");
+		return EXIT_FAILURE;
+	}
 	 
 	// The main shell loop.
 	for (;;) {
@@ -286,6 +296,14 @@ static int execute_pipeline(const struct pipeline *pipeline)
 			free(pids);
 			return -1;
 		} else if (pid == 0) {
+			if (!pipeline->background) {
+				struct sigaction dfl;
+				memset(&dfl, 0, sizeof(dfl));
+				dfl.sa_handler = SIG_DFL;
+				sigemptyset(&dfl.sa_mask);
+				sigaction(SIGINT, &dfl, NULL);
+			}
+
 			execvp(cmd_name, cmd->argv);
 
 			perror(cmd_name);
