@@ -200,7 +200,7 @@ void reap_bg_jobs(void) {
  */
 static int execute_pipeline(const struct pipeline *pipeline)
 {
-	pid_t *pids;	
+	pid_t *pids;
 	int result = 0;
 	
 	// First, we have to handle the internal commands. To do this, we need to
@@ -208,7 +208,32 @@ static int execute_pipeline(const struct pipeline *pipeline)
 	// an internal command. Remember that the command name is always stored in
 	// argv[0].
 
-	// Add your code here...
+	if (pipeline != NULL && pipeline->command_count == 1) {
+		const struct command *cmd = &pipeline->commands[0];
+		const char *cmd_name = cmd->argv[0];
+
+		if (cmd_name != NULL) {
+			// Handle exit command
+			if (strcmp(cmd_name, "exit") == 0) exit(0);
+
+			// Handle cd command
+			if (strcmp(cmd_name, "cd") == 0) {
+				char *path = cmd->argv[1];
+				if (path == NULL) {
+					char *home = getenv("HOME");
+					if (home == NULL) {
+						fprintf(stderr, "cd: HOME env variable not set\n");
+						return 0;
+					}
+
+					path = home;
+				}
+
+				if (chdir(path) == -1) perror("cd");
+				return 0;
+			}
+		}
+	}
 
 	// No internal command found. We have to execute a new program for each
 	// command in the pipeline.
